@@ -123,6 +123,20 @@
     .sw-yes { background: var(--green); color: #fff; }
     .sw-no { background: var(--surface2); color: var(--text2); }
 
+    /* MESSAGES / INBOX */
+    .inbox { padding: 24px 28px; }
+    .inbox h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+    .msg-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 8px; transition: all 0.2s; }
+    .msg-card.unread { border-left: 3px solid var(--purple); background: var(--purple-bg); }
+    .msg-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .msg-from { font-size: 12px; font-weight: 600; color: var(--text); }
+    .msg-time { font-size: 9px; color: var(--text3); }
+    .msg-body { font-size: 11px; color: var(--text2); line-height: 1.5; }
+    .msg-body strong { color: var(--text); }
+    .msg-actions { display: flex; gap: 6px; margin-top: 10px; }
+    .msg-empty { color: var(--text3); font-size: 12px; text-align: center; padding: 48px 0; }
+    .inbox-badge { background: var(--purple); color: #fff; border-radius: 8px; padding: 1px 6px; font-size: 9px; font-weight: 700; margin-left: 4px; min-width: 14px; text-align: center; display: inline-block; }
+
     /* HELPERS OVERVIEW */
     .h-overview { padding: 24px 28px; }
     .h-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
@@ -356,7 +370,7 @@
       {id:'sun',name:'Sonntag',sh:'So',lb:'Marathon bis 17 Uhr'},
     ];
 
-    var TGT=6,TGT_H=9;
+    var TGT_DEFAULT=6,TGT_H_DEFAULT=9; // 6 Schichten × 1,5h = 9h
     var ADMIN_PW='btm';
     var SAVE_KEY='bendito-helferplan-v4';
 
@@ -435,8 +449,8 @@
       try{var d=JSON.parse(localStorage.getItem(SAVE_KEY));if(d&&d.helpers&&d.shifts)return d;}catch(e){}
       return null;
     }
-    function saveData(helpers,shifts,swaps){
-      try{localStorage.setItem(SAVE_KEY,JSON.stringify({helpers:helpers,shifts:shifts,swaps:swaps,saved:new Date().toISOString()}));}catch(e){}
+    function saveData(helpers,shifts,swaps,tgtShifts,tgtHours,messages){
+      try{localStorage.setItem(SAVE_KEY,JSON.stringify({helpers:helpers,shifts:shifts,swaps:swaps,tgtShifts:tgtShifts,tgtHours:tgtHours,messages:messages||[],saved:new Date().toISOString()}));}catch(e){}
     }
 
     function App(){
@@ -457,6 +471,10 @@
       var [swapForm,setSwapForm]=useState(null);
       var [swapTarget,setSwapTarget]=useState('');
       var [swapMsg,setSwapMsg]=useState('');
+      var [tgtShifts,setTgtShifts]=useState(saved&&saved.tgtShifts!=null?saved.tgtShifts:TGT_DEFAULT);
+      var [tgtHours,setTgtHours]=useState(saved&&saved.tgtHours!=null?saved.tgtHours:TGT_H_DEFAULT);
+      var [messages,setMessages]=useState(saved&&saved.messages||[]);
+      var msgIdRef={current:messages.length};
       var [loginMode,setLoginMode]=useState('choose'); // 'choose','admin','helper'
       var [loginSel,setLoginSel]=useState('');
       var [pw,setPw]=useState('');
@@ -466,7 +484,7 @@
       var swapIdRef={current:swaps.length};
 
       // Autosave
-      useEffect(function(){saveData(helpers,shifts,swaps);},[helpers,shifts,swaps]);
+      useEffect(function(){saveData(helpers,shifts,swaps,tgtShifts,tgtHours,messages);},[helpers,shifts,swaps,tgtShifts,tgtHours,messages]);
 
       // Sync from Google Sheet
       var syncFromSheet=function(){
@@ -514,11 +532,57 @@
       function slotClick(sid){if(role==='admin'){if(sel){assign(sid,sel);}else{setDd(dd===sid?null:sid);}}}
       function addHelper(){if(!addN.trim())return;var mx=helpers.reduce(function(m,h){return Math.max(m,h.id);},0);setHelpers(helpers.concat([{id:mx+1,name:addN.trim(),color:addC,ch:''}]));setAddN('');setAddC('#C9962B');}
       function delHelper(id){setHelpers(function(p){return p.filter(function(h){return h.id!==id;});});setShifts(function(p){return p.map(function(s){return Object.assign({},s,{a:s.a.filter(function(x){return x!==id;})});});});if(sel===id)setSel(null);if(popup===id)setPopup(null);}
-      function exportD(){var d=JSON.stringify({helpers:helpers,shifts:shifts,swaps:swaps},null,2);var b=new Blob([d],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='bendito-helferplan.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);}
-      function submitSwap(shiftId){if(!swapTarget||!myId)return;swapIdRef.current++;setSwaps(swaps.concat([{id:swapIdRef.current,from:myId,shiftId:shiftId,wantShiftId:swapTarget,msg:swapMsg,status:'pending'}]));setSwapForm(null);setSwapTarget('');setSwapMsg('');}
+      function exportD(){var d=JSON.stringify({helpers:helpers,shifts:shifts,swaps:swaps,messages:messages,tgtShifts:tgtShifts,tgtHours:tgtHours},null,2);var b=new Blob([d],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='bendito-helferplan.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);}
+      function addMsg(to,from,type,text,swapId){
+        msgIdRef.current++;
+        var m={id:msgIdRef.current,to:to,from:from,type:type,text:text,swapId:swapId||null,read:false,ts:new Date().toISOString()};
+        setMessages(function(prev){return prev.concat([m]);});
+        return m;
+      }
+      function markRead(msgId){setMessages(function(prev){return prev.map(function(m){return m.id===msgId?Object.assign({},m,{read:true}):m;});});}
+
+      function submitSwap(shiftId){
+        if(!swapTarget||!myId)return;
+        swapIdRef.current++;
+        var swId=swapIdRef.current;
+        var newSw={id:swId,from:myId,shiftId:shiftId,wantShiftId:swapTarget,msg:swapMsg,status:'pending'};
+        setSwaps(swaps.concat([newSw]));
+        // Find who is assigned to the target shift → send them a message
+        var targetShift=shifts.find(function(s){return s.id===swapTarget;});
+        if(targetShift){
+          var fromH=gh(myId);var fromName=fromH?fromH.name:'Jemand';
+          var s1=shifts.find(function(s){return s.id===shiftId;});
+          var s2=targetShift;
+          var d1=s1?DAYS.find(function(x){return x.id===s1.dy;}):null;
+          var d2=DAYS.find(function(x){return x.id===s2.dy;});
+          var detail=(d1?d1.sh+' ':'')+(s1?s1.tm+' '+gst(s1.t).n:'')+' → '+(d2?d2.sh+' ':'')+s2.tm+' '+gst(s2.t).n;
+          targetShift.a.forEach(function(hId){
+            if(hId!==myId){
+              addMsg(hId,myId,'swap_request',fromName+' möchte mit dir tauschen: '+detail+(swapMsg?' — "'+swapMsg+'"':''),swId);
+            }
+          });
+        }
+        setSwapForm(null);setSwapTarget('');setSwapMsg('');
+      }
       function resolveSwap(swapId,accept){
-        if(accept){var sw=swaps.find(function(s){return s.id===swapId;});if(sw){setShifts(function(p){return p.map(function(s){if(s.id===sw.shiftId)return Object.assign({},s,{a:s.a.filter(function(x){return x!==sw.from;})});if(s.id===sw.wantShiftId&&s.a.indexOf(sw.from)===-1&&s.a.length<s.c)return Object.assign({},s,{a:s.a.concat([sw.from])});return s;});});}}
+        var sw=swaps.find(function(s){return s.id===swapId;});
+        if(accept&&sw){
+          setShifts(function(p){return p.map(function(s){
+            if(s.id===sw.shiftId)return Object.assign({},s,{a:s.a.filter(function(x){return x!==sw.from;})});
+            if(s.id===sw.wantShiftId&&s.a.indexOf(sw.from)===-1&&s.a.length<s.c)return Object.assign({},s,{a:s.a.concat([sw.from])});
+            return s;
+          });});
+        }
         setSwaps(swaps.map(function(s){return s.id===swapId?Object.assign({},s,{status:accept?'accepted':'rejected'}):s;}));
+        // Send result message back to requester
+        if(sw){
+          var responder=gh(myId||0);var rName=responder?responder.name:'Admin';
+          if(accept){
+            addMsg(sw.from,myId||0,'swap_accepted',rName+' hat deinen Tausch angenommen!',swapId);
+          }else{
+            addMsg(sw.from,myId||0,'swap_rejected',rName+' hat deinen Tausch abgelehnt.',swapId);
+          }
+        }
       }
 
       useEffect(function(){
@@ -528,10 +592,12 @@
 
       var isAdmin=role==='admin';
       var isHelper=role==='helper';
-      var sortH=helpers.slice().sort(function(a,b){var sa=hs[a.id]?hs[a.id].c:0,sb=hs[b.id]?hs[b.id].c:0;if(sa>=TGT&&sb<TGT)return 1;if(sb>=TGT&&sa<TGT)return -1;return sa-sb;});
+      var sortH=helpers.slice().sort(function(a,b){var sa=hs[a.id]?hs[a.id].c:0,sb=hs[b.id]?hs[b.id].c:0;if(sa>=tgtShifts&&sb<tgtShifts)return 1;if(sb>=tgtShifts&&sa<tgtShifts)return -1;return sa-sb;});
       var dayShifts=shifts.filter(function(s){return s.dy===day;});
       var mySwaps=swaps.filter(function(s){return s.from===myId;});
       var pendingSwaps=swaps.filter(function(s){return s.status==='pending';});
+      var myMessages=myId?messages.filter(function(m){return m.to===myId;}):[];
+      var unreadCount=myMessages.filter(function(m){return !m.read;}).length;
 
       // Swaps that target a shift where myId is assigned (incoming swaps for helper)
       var incomingSwaps=myId?swaps.filter(function(sw){
@@ -621,6 +687,7 @@
             <button class=${view==='helpers'?'tab on':'tab'} onClick=${function(){setView('helpers');}}>Helfer</button>
             <button class=${view==='howto'?'tab on':'tab'} onClick=${function(){setView('howto');}}>Anleitungen</button>
             ${isAdmin && html`<button class=${view==='swaps'?'tab on':'tab'} onClick=${function(){setView('swaps');}}>Tausch ${pendingSwaps.length>0?html`<span class="badge">${pendingSwaps.length}</span>`:''}</button>`}
+            ${isHelper && html`<button class=${view==='inbox'?'tab on':'tab'} onClick=${function(){setView('inbox');}}>Nachrichten ${unreadCount>0?html`<span class="badge">${unreadCount}</span>`:''}</button>`}
             ${isHelper && html`<button class=${view==='myswaps'?'tab on':'tab'} onClick=${function(){setView('myswaps');}}>Mein Tausch ${incomingSwaps.length>0?html`<span class="badge">${incomingSwaps.length}</span>`:''}</button>`}
             ${isAdmin && html`<button class=${view==='settings'?'tab on':'tab'} onClick=${function(){setView('settings');}}>Einstellungen</button>`}
           </div>
@@ -631,13 +698,13 @@
               <div class="hbar-hint">Helfer w\u00e4hlen \u2192 Slot klicken zum Zuweisen</div>
               <div class="chips">
                 ${sortH.map(function(h){
-                  var s=hs[h.id]||{c:0};var done=s.c>=TGT;var isSel=sel===h.id;
+                  var s=hs[h.id]||{c:0};var done=s.c>=tgtShifts;var isSel=sel===h.id;
                   return html`<span key=${h.id} class=${'chip'+(isSel?' picked':'')+(done?' done':'')}
                     style=${{backgroundColor:h.color,color:tc(h.color)}}
                     onClick=${function(e){e.stopPropagation();setSel(isSel?null:h.id);setDd(null);}}
                     onDblClick=${function(e){e.stopPropagation();setPopup(h.id);}}
                     title=${h.name+': '+s.c+'/'+TGT}
-                  >${h.name} <span class="cnt">${s.c}/${TGT}</span>${done?' \u2713':''}</span>`;
+                  >${h.name} <span class="cnt">${s.c}/${tgtShifts}</span>${done?' \u2713':''}</span>`;
                 })}
               </div>
             </div>
@@ -691,7 +758,7 @@
                         ${helpers.filter(function(h){return shift.a.indexOf(h.id)===-1;}).sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(h){
                           return html`<div key=${h.id} class="dd-row" onClick=${function(){assign(shift.id,h.id);}}>
                             <span class="dd-dot" style=${{backgroundColor:h.color}} /><span>${h.name}</span>
-                            <span style=${{color:'var(--text3)',marginLeft:'auto',fontSize:'10px'}}>${(hs[h.id]||{c:0}).c}/${TGT}</span>
+                            <span style=${{color:'var(--text3)',marginLeft:'auto',fontSize:'10px'}}>${(hs[h.id]||{c:0}).c}/${tgtShifts}</span>
                           </div>`;
                         })}
                       </div>`}
@@ -728,7 +795,7 @@
                     <div style=${{width:'40px',height:'40px',borderRadius:'50%',backgroundColor:h.color}} />
                     <div>
                       <div style=${{fontWeight:700}}>${h.name}</div>
-                      <div style=${{fontSize:'11px',color:'var(--text3)'}}>${s.c} Schichten \u00b7 ${s.hr.toFixed(1)}h von ${TGT_H}h ${s.hr>=TGT_H?' \u2713':''}</div>
+                      <div style=${{fontSize:'11px',color:'var(--text3)'}}>${s.c} Schichten \u00b7 ${s.hr.toFixed(1)}h von ${tgtHours}h ${s.hr>=tgtHours?' \u2713':''}</div>
                     </div>
                   </div>
                   ${DAYS.map(function(d){
@@ -803,6 +870,45 @@
             </div>
           `}
 
+          <!-- INBOX (helper) -->
+          ${view==='inbox'&&isHelper&&myId && html`
+            <div class="inbox">
+              <h2 style=${{color:'var(--purple)'}}>Nachrichten</h2>
+              ${myMessages.length===0 && html`<p class="msg-empty">Keine Nachrichten</p>`}
+              ${myMessages.slice().reverse().map(function(m){
+                var fromH=gh(m.from);
+                var isSwapReq=m.type==='swap_request';
+                var isAccepted=m.type==='swap_accepted';
+                var isRejected=m.type==='swap_rejected';
+                var sw=m.swapId?swaps.find(function(s){return s.id===m.swapId;}):null;
+                var isPending=sw&&sw.status==='pending';
+                var ts=m.ts?new Date(m.ts):null;
+                var timeStr=ts?ts.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})+' '+ts.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'';
+                return html`<div class=${'msg-card'+(m.read?'':' unread')} key=${m.id} onClick=${function(){if(!m.read)markRead(m.id);}}>
+                  <div class="msg-head">
+                    <div class="msg-from">
+                      ${isSwapReq?'Tausch-Anfrage':''}
+                      ${isAccepted?'Tausch angenommen':''}
+                      ${isRejected?'Tausch abgelehnt':''}
+                    </div>
+                    <div class="msg-time">${timeStr}</div>
+                  </div>
+                  <div class="msg-body">${m.text}</div>
+                  ${isSwapReq&&isPending && html`
+                    <div class="msg-actions">
+                      <button class="sw-act sw-yes" onClick=${function(e){e.stopPropagation();resolveSwap(m.swapId,true);markRead(m.id);}}>Annehmen</button>
+                      <button class="sw-act sw-no" onClick=${function(e){e.stopPropagation();resolveSwap(m.swapId,false);markRead(m.id);}}>Ablehnen</button>
+                    </div>
+                  `}
+                  ${isSwapReq&&!isPending&&sw && html`
+                    <div style=${{marginTop:'8px',fontSize:'10px',fontWeight:600,color:sw.status==='accepted'?'var(--green)':'var(--red)'}}>${sw.status==='accepted'?'Angenommen':'Abgelehnt'}</div>
+                  `}
+                  ${isAccepted && html`<div style=${{marginTop:'6px',fontSize:'18px'}}>✓</div>`}
+                </div>`;
+              })}
+            </div>
+          `}
+
           <!-- MY SWAPS (helper) -->
           ${view==='myswaps'&&isHelper && html`
             <div class="swap-list">
@@ -853,16 +959,16 @@
             <div class="h-overview">
               <div class="h-grid">
                 ${helpers.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(h){
-                  var s=hs[h.id]||{c:0,hr:0};var pct=Math.min(100,s.hr/TGT_H*100);
+                  var s=hs[h.id]||{c:0,hr:0};var pct=Math.min(100,s.hr/tgtHours*100);
                   var col=pct>=100?'var(--green)':pct>=50?'var(--orange)':'var(--red)';
                   var isMe=h.id===myId;
                   return html`<div key=${h.id} class=${'h-card'+(isMe?' me':'')} onClick=${function(){setPopup(h.id);}}>
                     <div class="h-av" style=${{backgroundColor:h.color}} />
                     <div style=${{flex:1,minWidth:0}}>
                       <div class="h-nm">${h.name}${isMe?' (du)':''} ${h.setup?html`<span style=${{fontSize:'9px',color:'var(--gold)'}}> Aufbau</span>`:''}</div>
-                      <div class="h-sub">${s.c} Schichten \u00b7 ${s.hr.toFixed(1)}h von ${TGT_H}h</div>
+                      <div class="h-sub">${s.c} Schichten \u00b7 ${s.hr.toFixed(1)}h von ${tgtHours}h</div>
                       <div class="h-bar-wrap"><div class="h-bar-bg" style=${{flex:1}}><div class="h-bar-fill" style=${{width:pct+'%',backgroundColor:col}} /></div>
-                        <div class="h-bar-txt" style=${{color:col}}>${pct>=100?'\u2713':(TGT_H-s.hr).toFixed(1)+'h'}</div>
+                        <div class="h-bar-txt" style=${{color:col}}>${pct>=100?'\u2713':(tgtHours-s.hr).toFixed(1)+'h'}</div>
                       </div>
                     </div>
                   </div>`;
@@ -892,6 +998,20 @@
           ${view==='settings'&&isAdmin && html`
             <div class="settings">
               <div class="s-block">
+                <h3>Soll-Stunden</h3>
+                <div style=${{fontSize:'12px',color:'var(--text2)',marginBottom:'10px'}}>Standard: 6 Schichten × 1,5h = 9h pro Helfer</div>
+                <div class="s-row" style=${{gap:'12px'}}>
+                  <div style=${{flex:1}}>
+                    <label style=${{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.5px'}}>Schichten</label>
+                    <input class="s-inp" type="number" min="1" max="20" value=${tgtShifts} onInput=${function(e){var v=parseInt(e.target.value);if(v>0)setTgtShifts(v);}} style=${{width:'100%',marginTop:'4px'}} />
+                  </div>
+                  <div style=${{flex:1}}>
+                    <label style=${{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.5px'}}>Stunden gesamt</label>
+                    <input class="s-inp" type="number" min="1" max="100" step="0.5" value=${tgtHours} onInput=${function(e){var v=parseFloat(e.target.value);if(v>0)setTgtHours(v);}} style=${{width:'100%',marginTop:'4px'}} />
+                  </div>
+                </div>
+              </div>
+              <div class="s-block">
                 <h3>Helfer hinzuf\u00fcgen</h3>
                 <div class="s-row">
                   <input class="s-inp" type="text" placeholder="Name" value=${addN} onInput=${function(e){setAddN(e.target.value);}} onKeyDown=${function(e){if(e.key==='Enter')addHelper();}} />
@@ -915,7 +1035,7 @@
                 <h3>Daten</h3>
                 <div style=${{display:'flex',gap:'6px'}}>
                   <button class="btn btn-purple" onClick=${exportD}>Export JSON</button>
-                  <button class="btn btn-ghost" onClick=${function(){if(confirm('Daten zur\u00fccksetzen? Alle \u00c4nderungen gehen verloren.')){localStorage.removeItem(SAVE_KEY);setHelpers(HELPERS0);setShifts(SHIFTS0);setSwaps([]);}}}>Zur\u00fccksetzen</button>
+                  <button class="btn btn-ghost" onClick=${function(){if(confirm('Daten zur\u00fccksetzen? Alle \u00c4nderungen gehen verloren.')){localStorage.removeItem(SAVE_KEY);setHelpers(HELPERS0);setShifts(SHIFTS0);setSwaps([]);setMessages([]);setTgtShifts(TGT_DEFAULT);setTgtHours(TGT_H_DEFAULT);}}}>Zur\u00fccksetzen</button>
                 </div>
                 <div style=${{marginTop:'8px',fontSize:'10px',color:'var(--text3)'}}>Daten werden automatisch im Browser gespeichert (localStorage).</div>
               </div>
@@ -929,7 +1049,7 @@
                 <button class="popup-x" onClick=${function(){setPopup(null);}}>\u00D7</button>
                 ${(function(){
                   var h=gh(popup);if(!h)return null;
-                  var s=hs[h.id]||{c:0,hr:0};var pct=Math.min(100,s.hr/TGT_H*100);
+                  var s=hs[h.id]||{c:0,hr:0};var pct=Math.min(100,s.hr/tgtHours*100);
                   var col=pct>=100?'var(--green)':'var(--orange)';
                   return html`<div>
                     <div class="pop-head">
@@ -942,7 +1062,7 @@
                     <div class="pop-stats">
                       <div class="pop-s"><div class="v" style=${{color:'var(--gold)'}}>${s.c}</div><div class="l">Schichten</div></div>
                       <div class="pop-s"><div class="v" style=${{color:'var(--purple)'}}>${s.hr.toFixed(1)}h</div><div class="l">Stunden</div></div>
-                      <div class="pop-s"><div class="v" style=${{color:col}}>${pct>=100?'\u2713':(TGT_H-s.hr).toFixed(1)+'h'}</div><div class="l">${pct>=100?'Erreicht':'Offen'}</div></div>
+                      <div class="pop-s"><div class="v" style=${{color:col}}>${pct>=100?'\u2713':(tgtHours-s.hr).toFixed(1)+'h'}</div><div class="l">${pct>=100?'Erreicht':'Offen'}</div></div>
                     </div>
                     ${DAYS.map(function(d){
                       var ds=shifts.filter(function(x){return x.dy===d.id&&x.a.indexOf(h.id)!==-1;});
