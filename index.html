@@ -659,7 +659,7 @@
             </div>
             <div class="header-right">
               ${isAdmin && html`<div class="stat-pill"><b>${gSt.fil}</b>/${gSt.tot} belegt \u00b7 <b>${gSt.pct}%</b></div>`}
-              ${isHelper && myId && html`<div class="stat-pill"><b>${(hs[myId]||{c:0}).c}</b>/${TGT} Schichten</div>`}
+              ${isHelper && myId && html`<div class="stat-pill"><b>${(hs[myId]||{c:0}).c}</b>/${tgtShifts} Schichten</div>`}
               ${isAdmin && html`<button class="stat-pill" style=${{cursor:'pointer',border:'none',fontFamily:'inherit'}} onClick=${syncFromSheet} title="Daten aus Google Sheet laden">
                 ${sheetStatus==='loading'?'\u21BB Lade...':sheetStatus==='ok'?'\u2713 Synchronisiert':sheetStatus==='error'?'\u2717 Fehler':'\u21BB Sheet Sync'}
               </button>`}
@@ -703,7 +703,7 @@
                     style=${{backgroundColor:h.color,color:tc(h.color)}}
                     onClick=${function(e){e.stopPropagation();setSel(isSel?null:h.id);setDd(null);}}
                     onDblClick=${function(e){e.stopPropagation();setPopup(h.id);}}
-                    title=${h.name+': '+s.c+'/'+TGT}
+                    title=${h.name+': '+s.c+'/'+tgtShifts}
                   >${h.name} <span class="cnt">${s.c}/${tgtShifts}</span>${done?' \u2713':''}</span>`;
                 })}
               </div>
